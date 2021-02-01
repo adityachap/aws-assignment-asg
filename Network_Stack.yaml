@@ -1,0 +1,443 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cloudformation for creating all network resources
+Parameters:
+
+  VpcBlock:
+    Type: String
+    Default: 192.168.0.0/16
+    AllowedPattern: '.+'
+    Description: The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR range.
+
+  PrivateSubnet01Block:
+    Type: String
+    Default: 192.168.64.0/19
+    AllowedPattern: '.+'
+    Description: CidrBlock for private subnet 01 within the VPC
+
+  PrivateSubnet02Block:
+    Type: String
+    Default: 192.168.96.0/19
+    AllowedPattern: '.+'
+    Description: CidrBlock for private subnet 02 within the VPC
+
+  PrivateSubnet03Block:
+    Type: String
+    Default: 192.168.128.0/19
+    AllowedPattern: '.+'
+    Description: CidrBlock for private subnet 03 within the VPC
+
+ 
+  PublicSubnet01Block:
+    Type: String
+    Default: 192.168.160.0/19
+    AllowedPattern: '.+'
+    Description: CidrBlock for public subnet 01 within the VPC
+  
+  PublicSubnet02Block:
+    Type: String
+    Default: 192.168.192.0/19
+    AllowedPattern: '.+'
+    Description: CidrBlock for public subnet 02 within the VPC
+  
+  PublicSubnet03Block:
+    Type: String
+    Default: 192.168.224.0/19
+    AllowedPattern: '.+'
+    Description: CidrBlock for public subnet 03 within the VPC
+    
+  MapPublicIpOnLaunch:
+    Type: String
+    Default: true
+    AllowedPattern: '.+'
+    Description: Indicates whether instances launched in this subnet receive a public IPv4 address
+    
+  LoadBalancerName:
+    Type: String
+    Default: ASGLoadbalancer
+    Description: Name of the loadbalancer which will point to ASG instances in private subnet
+    
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "VPC and Network Block"
+        Parameters:
+          - VpcBlock
+          - PrivateSubnet01Block
+          - PrivateSubnet02Block
+          - PrivateSubnet03Block
+          - PublicSubnet01Block
+          - PublicSubnet02Block
+          - PublicSubnet03Block
+  
+Conditions:
+  Has2Azs:
+    Fn::Or:
+      - Fn::Equals:
+        - {Ref: 'AWS::Region'}
+        - ap-south-1
+      - Fn::Equals:
+        - {Ref: 'AWS::Region'}
+        - ap-northeast-2
+      - Fn::Equals:
+        - {Ref: 'AWS::Region'}
+        - ca-central-1
+      - Fn::Equals:
+        - {Ref: 'AWS::Region'}
+        - cn-north-1
+      - Fn::Equals:
+        - {Ref: 'AWS::Region'}
+        - sa-east-1
+      - Fn::Equals:
+        - {Ref: 'AWS::Region'}
+        - us-west-1
+
+  HasMoreThan2Azs:
+    Fn::Not:
+      - Condition: Has2Azs
+
+
+Resources:
+      
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock:  !Ref VpcBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName}-VPC'
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: VPC    
+    Properties:
+      VpcId: !Ref VPC
+    
+
+  PrivateSubnet01:
+    Type: AWS::EC2::Subnet
+    DependsOn: PrivateRouteTable
+    Metadata:
+      Comment: Private Subnet 01
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - '0'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock:
+        Ref: PrivateSubnet01Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: Name
+        Value: !Sub "${AWS::StackName}-PrivateSubnet01"
+
+  PrivateSubnet02:
+    Type: AWS::EC2::Subnet
+    DependsOn: PrivateSubnet01
+    Metadata:
+      Comment: Private Subnet 02
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - '1'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock:
+        Ref: PrivateSubnet02Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: Name
+        Value: !Sub "${AWS::StackName}-PrivateSubnet02"
+
+  PrivateSubnet03:
+    Condition: HasMoreThan2Azs
+    Type: AWS::EC2::Subnet
+    DependsOn: PrivateSubnet02
+    Metadata:
+      Comment: Private Subnet 03
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - '2'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock:
+        Ref: PrivateSubnet03Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: Name
+        Value: !Sub "${AWS::StackName}-PrivateSubnet03"
+
+  PrivateSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PrivateSubnet03
+    Properties:
+      SubnetId: !Ref PrivateSubnet01
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PrivateSubnet01RouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet02
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet03RouteTableAssociation:
+    Condition: HasMoreThan2Azs
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PrivateSubnet02RouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet03
+      RouteTableId: !Ref PrivateRouteTable
+     
+  ASGSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: PrivateSubnet03RouteTableAssociation
+    Properties:
+      GroupDescription: Security group to govern who can access the ASG instances
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcBlock
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref VpcBlock
+      Tags:
+      - Key: Name
+        Value: ASGSecurityGroup
+          
+  LBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: ASGSecurityGroup
+    Properties:
+      GroupDescription: Security group for Loadbalancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: LBSecurityGroup
+
+  PublicSubnet01:
+    Type: AWS::EC2::Subnet
+    DependsOn: ASGSecurityGroup
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - '0'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet01Block
+      MapPublicIpOnLaunch: !Ref MapPublicIpOnLaunch
+      Tags: 
+        - Key: "Name"
+          Value: "PublicSubnet01"
+  
+  PublicSubnet02:
+    Type: AWS::EC2::Subnet
+    DependsOn: PublicSubnet01
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - '1'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet02Block
+      MapPublicIpOnLaunch: !Ref MapPublicIpOnLaunch
+      Tags: 
+        - Key: "Name"
+          Value: "PublicSubnet02"
+  
+  PublicSubnet03:
+    Condition: HasMoreThan2Azs
+    Type: AWS::EC2::Subnet
+    DependsOn: PublicSubnet02
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - '2'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet03Block
+      MapPublicIpOnLaunch: !Ref MapPublicIpOnLaunch
+      Tags: 
+        - Key: "Name"
+          Value: "PublicSubnet03"
+          
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    DependsOn: PublicSubnet03
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join [_, [!Ref 'AWS::StackName']]
+        - Key: Network
+          Value: Public
+  
+  GatewayToInternet:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    DependsOn: InternetGateway
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    DependsOn: GatewayToInternet
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Network
+          Value: Public
+  
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: PublicRouteTable
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+     
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DependsOn: PublicRoute
+    Properties:
+      SubnetId: !Ref PublicSubnet01
+      RouteTableId: !Ref PublicRouteTable
+  
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DependsOn: PublicRoute
+    Properties:
+      SubnetId: !Ref PublicSubnet02
+      RouteTableId: !Ref PublicRouteTable
+  
+  PublicSubnet3RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DependsOn: PublicRoute
+    Properties:
+      SubnetId: !Ref PublicSubnet03
+      RouteTableId: !Ref PublicRouteTable
+
+  EIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: [PublicSubnet1RouteTableAssociation,PublicSubnet2RouteTableAssociation,PublicSubnet3RouteTableAssociation]
+    Properties:
+      Domain: vpc
+      
+  NatGateway:
+    Type: 'AWS::EC2::NatGateway'
+    DependsOn: 
+      - EIP
+      - PublicSubnet01
+    Properties:
+      AllocationId: !GetAtt 'EIP.AllocationId'
+      SubnetId: !Ref PublicSubnet01
+
+  NatRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: 
+      - NatGateway
+      - PrivateRouteTable
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NatGateway
+          
+  ApplicationLB:
+    DependsOn: NatRoute
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties: 
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      Subnets: 
+        - !Ref PublicSubnet01
+        - !Ref PublicSubnet02
+        - !Ref PublicSubnet03
+      Type: application
+      Name: !Ref LoadBalancerName
+      SecurityGroups:
+        - !Ref LBSecurityGroup
+   
+  ALBTargetGroup:
+    DependsOn: ApplicationLB
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties: 
+      Name: ALBTargetGroup
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      Matcher:
+        HttpCode: 403
+      VpcId: !Ref VPC
+   
+  ALBListener:
+    DependsOn: ALBTargetGroup
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties: 
+      DefaultActions: 
+        - 
+          TargetGroupArn: !Ref ALBTargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLB
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+
+  VpcId:
+    Description: The VPC ID
+    Value: !Ref VPC
+
+  PrivateSubnetIds:
+    Description: All private subnets in the VPC
+    Value:
+      Fn::If:
+      - HasMoreThan2Azs
+      - !Join [ ",", [ !Ref PrivateSubnet01, !Ref PrivateSubnet02, !Ref PrivateSubnet03 ] ]
+      - !Join [ ",", [ !Ref PrivateSubnet01, !Ref PrivateSubnet02 ] ]
+      
+  PublicSubnetIds:
+    Description: All public subnets in the VPC
+    Value:
+      Fn::If:
+      - HasMoreThan2Azs
+      - !Join [ ",", [ !Ref PublicSubnet01, !Ref PublicSubnet02, !Ref PublicSubnet03 ] ]
+      - !Join [ ",", [ !Ref PublicSubnet01, !Ref PublicSubnet02 ] ]
+
+  SecurityGroups:
+    Description: Security group for the auto-scaling group
+    Value: !Ref ASGSecurityGroup
+    
+  LoadbalancerEndpoint:
+    Description: The DNS name for the load balancer
+    Value: !GetAtt ApplicationLB.DNSName
+    
+  TargetGroupName:
+    Description: Target Group ARN
+    Value: !GetAtt ALBTargetGroup.TargetGroupFullName
+
+
+    
