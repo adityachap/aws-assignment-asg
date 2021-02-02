@@ -121,7 +121,7 @@ Resources:
               Encrypted: true
           - DeviceName: /dev/sdb
             Ebs:
-              DeleteOnTermination: true
+              DeleteOnTermination: false
               VolumeSize: !Ref NodeVolumeSize
               VolumeType: gp2
               Encrypted: true
