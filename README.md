@@ -124,7 +124,7 @@ Some of the benifits of this alternate solution are
 
 ### Support Details
 
-In case of any issue regarding Jira service desk or any requests please use the contact details given below
+In case of any issue or any requests please use the contact details given below
 
 | ContactId | Contact Details |
 | ------ | ------ |
