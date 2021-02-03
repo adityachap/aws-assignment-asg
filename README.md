@@ -17,7 +17,7 @@ As we discuss in detail about the each stack/module and its parameters in later 
 In order to achieve this solution we have made some assumptions and design decisions as below
 
   - The user/role who is going to deploy the root stack should have permissions to create Cloudformation stacks
-  - The default values for all the parameters are set to lower limits to save cost for the demo deployment, actual values for production wpuld be much higher
+  - The default values for all the parameters are set to lower limits to save cost for the demo deployment, actual values for production would be much higher
   - There is a set of prerequites to be followed before we execute the stack (explained in below section)
   - POLP(Principle of Least Privilage) is used while creating the IAM resources and security groups
 
@@ -35,7 +35,7 @@ Post the prerequisites are completed , we are ready to deploy the stack. Let's u
 
 ### Root Stack/Module
 
-The root stack is the oly stack you need to deploy on cloudformation, it will automatically deploy the nested stacks defined in it.
+The root stack is the only stack you need to deploy on cloudformation, it will automatically deploy the nested stacks defined in it.
 
 In this solution the rootstack is the file "Root_Stack.yaml" and it consists of 3 Resources which are the nested stacks/modules as given below
 
@@ -65,7 +65,7 @@ Find below the snapshot of the nested network stack created successfully along w
 
 ### IAm & Governance Stack/Module
 
-The IAM&Govenance stack creates a IAM role with all the required AWS managed policies attached to it for enabling the AWS SSM so that the instances cam be access via sessions manager without needing the root user keys.
+The IAM&Govenance stack creates a IAM role with all the required AWS managed policies attached to it for enabling the AWS SSM so that the instances can be access via sessions manager without needing the root user keys.
 This stack also creates Instance profile for the same role to be attched to the ASG instances.
 
 Find below the snapshot of nested IAM&Govenance stack created successfully along with its outputs
